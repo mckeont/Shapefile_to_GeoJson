@@ -1,20 +1,83 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Shapefile Viewer</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wet Weather Control Strategy GIS-MCDA Calculator</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <style>
-        #map { height: 500px; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        header {
+            background-color: #007BFF;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+        }
+        #map {
+            height: 500px;
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: white;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #007BFF;
+            color: white;
+        }
+        form {
+            margin: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        input[type="submit"] {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin-top: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        input[type="file"] {
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
-    <h1>Upload your Shapefile (ZIP containing .shp, .shx, .dbf)</h1>
+    <header>
+        <h1>Wet Weather Control Strategy GIS-MCDA Calculator</h1>
+    </header>
     <form method="POST" action="/upload" enctype="multipart/form-data">
-      <input type="file" name="file">
-      <input type="submit">
+        <input type="file" name="file">
+        <input type="submit" value="Upload Shapefile">
     </form>
     <div id="map"></div>
+    <table>
+        <thead>
+            <tr>
+                <th>Shapefile Name</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody id="file-info"></tbody>
+    </table>
 
     <script>
         var map = L.map('map').setView([39.9526, -75.1652], 13); // Centered on Philadelphia
@@ -29,23 +92,34 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
+            .then(response => response.json())
             .then(data => {
-                console.log("Received GeoJSON data:", data);  // Log GeoJSON data for debugging
-                L.geoJSON(data).addTo(map);
+                if (data.url) {
+                    fetch(data.url)
+                    .then(response => response.json())
+                    .then(geoJsonData => {
+                        L.geoJSON(geoJsonData).addTo(map);
+                        var fileInfo = document.getElementById('file-info');
+                        fileInfo.innerHTML = ''; // Clear existing entries
+                        var row = fileInfo.insertRow();
+                        var cell1 = row.insertCell(0);
+                        var cell2 = row.insertCell(1);
+                        cell1.textContent = data.filename; // Adjust according to actual response
+                        cell2.textContent = 'Loaded successfully';
+                    })
+                    .catch(error => {
+                        console.error('Error loading GeoJSON:', error.message);
+                        alert('Error loading GeoJSON: ' + error.message);
+                    });
+                } else {
+                    throw new Error("Server did not return a file URL.");
+                }
             })
             .catch(error => {
                 console.error('Error during fetch operation:', error.message);
                 alert('Error during fetch operation: ' + error.message);
             });
         };
-
     </script>
-
 </body>
 </html>
