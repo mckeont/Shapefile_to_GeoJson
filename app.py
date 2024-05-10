@@ -1,9 +1,10 @@
 import os
 import zipfile
 import tempfile
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import geopandas as gpd
+from pyproj import Transformer
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -33,7 +34,8 @@ def upload():
     # Try to process the shapefile and save the GeoJSON
     try:
         geojson_filename = process_shapefile(filepath)
-        return send_from_directory(app.config['UPLOAD_FOLDER'], geojson_filename)
+        geojson_url = url_for('uploaded_file', filename=geojson_filename, _external=True)
+        return jsonify({'url': geojson_url})
     except Exception as e:
         app.logger.error(f"Failed to process shapefile: {e}")
         return jsonify({'error': str(e)}), 500
@@ -59,6 +61,13 @@ def process_shapefile(zip_path):
 
         # Load the shapefile into a GeoDataFrame
         gdf = gpd.read_file(shp_path)
+
+        # Transform the coordinate system to WGS 84
+        if gdf.crs is not None:
+            gdf = gdf.to_crs(epsg=4326)  # Transform all coordinates to EPSG:4326
+        else:
+            transformer = Transformer.from_crs("EPSG:2272", "EPSG:4326", always_xy=True)
+            gdf['geometry'] = gdf['geometry'].apply(lambda geom: transform(transformer.transform, geom))
 
         # Convert to GeoJSON
         geojson = gdf.to_json()
