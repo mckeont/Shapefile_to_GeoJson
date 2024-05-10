@@ -8,6 +8,9 @@ import geopandas as gpd
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
+# Ensure the upload directory exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 @app.route('/')
 def index():
     # Render the file upload form
@@ -27,10 +30,10 @@ def upload():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    # Try to process the shapefile and return the GeoJSON
+    # Try to process the shapefile and save the GeoJSON
     try:
-        geojson = process_shapefile(filepath)
-        return jsonify(geojson)
+        geojson_filename = process_shapefile(filepath)
+        return send_from_directory(app.config['UPLOAD_FOLDER'], geojson_filename)
     except Exception as e:
         app.logger.error(f"Failed to process shapefile: {e}")
         return jsonify({'error': str(e)}), 500
@@ -52,29 +55,21 @@ def process_shapefile(zip_path):
                 break
 
         if shp_path is None:
-            return {'error': 'No .shp file found'}
-
-        # Print out the shapefile path for debugging (you can remove this in production)
-        print(f"Shapefile path: {shp_path}")
+            raise Exception('No .shp file found in the uploaded ZIP.')
 
         # Load the shapefile into a GeoDataFrame
-        try:
-            gdf = gpd.read_file(shp_path)
-            # Print the GeoDataFrame for debugging (you can remove this in production)
-            print(gdf)
-        except Exception as e:
-            print(f"Error loading shapefile: {e}")  # Replace print with logging in production
-            return {'error': str(e)}
+        gdf = gpd.read_file(shp_path)
 
         # Convert to GeoJSON
-        try:
-            geojson = gdf.to_json()
-            # Print the GeoJSON for debugging (you can remove this in production)
-            print(geojson)
-            return geojson
-        except Exception as e:
-            print(f"Error converting to GeoJSON: {e}")  # Replace print with logging in production
-            return {'error': str(e)}
+        geojson = gdf.to_json()
+
+        # Save GeoJSON to a file
+        geojson_filename = os.path.splitext(os.path.basename(zip_path))[0] + '.geojson'
+        geojson_filepath = os.path.join(app.config['UPLOAD_FOLDER'], geojson_filename)
+        with open(geojson_filepath, 'w') as f:
+            f.write(geojson)
+
+        return geojson_filename
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
