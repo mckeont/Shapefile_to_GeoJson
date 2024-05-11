@@ -18,6 +18,8 @@ def index():
     return render_template('upload.html')
 
 @app.route('/upload', methods=['POST'])
+
+
 def upload():
     # Handle file upload
     if 'file' not in request.files:
@@ -35,7 +37,8 @@ def upload():
     try:
         geojson_filename = process_shapefile(filepath)
         geojson_url = url_for('uploaded_file', filename=geojson_filename, _external=True)
-        return jsonify({'url': geojson_url})
+        return jsonify({'url': geojson_url, 'filename': filename})  # Include filename in the response
+
     except Exception as e:
         app.logger.error(f"Failed to process shapefile: {e}")
         return jsonify({'error': str(e)}), 500
@@ -84,6 +87,8 @@ def process_shapefile(zip_path):
 def uploaded_file(filename):
     # Serve files from the upload directory
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
