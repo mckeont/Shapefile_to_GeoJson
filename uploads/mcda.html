@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wet Weather Control Strategy GIS-MCDA Calculator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/turf/turf.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        header {
+            background-color: #007BFF;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+        }
+        #map {
+            height: 500px;
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: white;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #007BFF;
+            color: white;
+        }
+        form {
+            margin: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        input[type="submit"] {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin-top: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        input[type="file"] {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Wet Weather Control Strategy GIS-MCDA Calculator</h1>
+    </header>
+    <form id="upload-form">
+        <input type="file" id="file-input" name="files" multiple accept=".geojson">
+        <input type="submit" value="Upload GeoJSON Files">
+    </form>
+    <div id="field-selectors" style="display:none;">
+        <!-- Field selectors will be added here dynamically -->
+    </div>
+    <button id="analyze-button" style="display:none;">Analyze</button>
+    <div id="map"></div>
+    <table>
+        <thead>
+            <tr>
+                <th>Overlapping Area</th>
+                <th>Summarized Field</th>
+                <th>Calculation Details</th>
+            </tr>
+        </thead>
+        <tbody id="file-info"></tbody>
+    </table>
+
+    <script>
+        var map = L.map('map').setView([39.9526, -75.1652], 13); // Centered on Philadelphia
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
+
+        var geoJsonData = [];
+        var analysisLayers = L.layerGroup().addTo(map); // Group to hold analysis layers
+
+        document.getElementById('upload-form').onsubmit = function(event) {
+            event.preventDefault();
+            var files = document.getElementById('file-input').files;
+            var promises = [];
+
+            for (var i = 0; i < files.length; i++) {
+                promises.push(readFileAsText(files[i]));
+            }
+
+            Promise.all(promises).then(function(results) {
+                results.forEach((result, index) => {
+                    var data = JSON.parse(result);
+                    geoJsonData.push(data);
+                    L.geoJSON(data, {
+                        style: {
+                            color: '#1E90FF',
+                            fillColor: '#1E90FF',
+                            fillOpacity: 0.3,
+                            weight: 1
+                        }
+                    }).addTo(map);
+                    addFieldSelector(data, files[index].name);
+                });
+                document.getElementById('field-selectors').style.display = 'block';
+                document.getElementById('analyze-button').style.display = 'block';
+            }).catch(function(error) {
+                console.error('Error reading GeoJSON files:', error);
+            });
+        };
+
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                var reader = new FileReader();
+                reader.onload = function(event) {
+                    resolve(event.target.result);
+                };
+                reader.onerror = function(event) {
+                    reject(event.target.error);
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        function addFieldSelector(data, fileName) {
+            var fieldNames = getFieldNames(data);
+            var container = document.getElementById('field-selectors');
+            var div = document.createElement('div');
+            div.innerHTML = `<label>Select Field to Summarize (${fileName}):</label>`;
+            var select = document.createElement('select');
+            fieldNames.forEach(field => {
+                var option = document.createElement('option');
+                option.value = field;
+                option.textContent = field;
+                select.appendChild(option);
+            });
+            div.appendChild(select);
+            container.appendChild(div);
+        }
+
+        function getFieldNames(data) {
+            var fieldNames = new Set();
+            data.features.forEach(feature => {
+                Object.keys(feature.properties).forEach(field => {
+                    fieldNames.add(field);
+                });
+            });
+            return Array.from(fieldNames);
+        }
+
+        document.getElementById('analyze-button').onclick = function() {
+            performAnalysis();
+        };
+
+        function performAnalysis() {
+            // Clear previous analysis layers and results
+            analysisLayers.clearLayers();
+            var fileInfo = document.getElementById('file-info');
+            fileInfo.innerHTML = '';
+
+            var selectors = document.getElementById('field-selectors').getElementsByTagName('select');
+            var selectedFields = [];
+            for (var i = 0; i < selectors.length; i++) {
+                selectedFields.push(selectors[i].value);
+            }
+
+            var combined = geoJsonData.reduce(function(accum, current) {
+                return accum.concat(current.features);
+            }, []);
+
+            var uniqueIntersections = new Set();
+            var summary = [];
+
+            combined.forEach(function(feature, index) {
+                combined.forEach(function(otherFeature, otherIndex) {
+                    if (index !== otherIndex) {
+                        var intersection = turf.intersect(feature, otherFeature);
+                        if (intersection) {
+                            var id = JSON.stringify(intersection.geometry); // Unique identifier for intersection
+                            if (!uniqueIntersections.has(id)) {
+                                uniqueIntersections.add(id);
+                                var detailString = '';
+                                var summaryField = 0;
+                                selectedFields.forEach(field => {
+                                    if (feature.properties[field]) {
+                                        summaryField += feature.properties[field];
+                                        detailString += `${feature.properties[field]} + `;
+                                    }
+                                    if (otherFeature.properties[field]) {
+                                        summaryField += otherFeature.properties[field];
+                                        detailString += `${otherFeature.properties[field]} + `;
+                                    }
+                                });
+                                detailString = detailString.slice(0, -3); // Remove the last " + "
+                                summary.push({
+                                    feature: feature,
+                                    summary: summaryField,
+                                    details: detailString,
+                                    geometry: intersection.geometry // Use intersection geometry
+                                });
+                            }
+                        }
+                    }
+                });
+            });
+
+            console.log('Suitability Analysis Summary:', summary);
+            displayResults(summary);
+            visualizeSummary(summary);
+        }
+
+        function displayResults(summary) {
+            var fileInfo = document.getElementById('file-info');
+            fileInfo.innerHTML = ''; // Clear previous results
+
+            summary.forEach(function(result, index) {
+                var row = fileInfo.insertRow();
+                var cell1 = row.insertCell(0);
+                var cell2 = row.insertCell(1);
+                var cell3 = row.insertCell(2);
+                cell1.textContent = 'Overlapping Area ' + (index + 1);
+                cell2.textContent = 'Summarized Field: ' + result.summary;
+                cell3.textContent = result.details;
+            });
+        }
+
+        function visualizeSummary(summary) {
+            // Calculate dynamic color ranges based on min and max values
+            var values = summary.map(result => result.summary);
+            var minValue = Math.min(...values);
+            var maxValue = Math.max(...values);
+
+            summary.forEach(function(result, index) {
+                if (result.geometry) {
+                    var color = getColor(result.summary, minValue, maxValue);
+                    var layer = L.geoJSON(result.geometry, {
+                        style: {
+                            color: '#000000', // Strong boundary
+                            fillColor: color,
+                            fillOpacity: 0.6,
+                            weight: 2 // Stronger boundary
+                        }
+                    }).addTo(analysisLayers); // Add to analysis layer group
+
+                    // Add popup to the layer
+                    layer.bindPopup(`Overlapping Area ${index + 1}<br>Summarized Field: ${result.summary}`);
+                }
+            });
+        }
+
+        function getColor(value, min, max) {
+            var range = max - min;
+            var step = range / 6;
+            return value > min + 5 * step ? '#800026' :
+                   value > min + 4 * step ? '#BD0026' :
+                   value > min + 3 * step ? '#E31A1C' :
+                   value > min + 2 * step ? '#FC4E2A' :
+                   value > min + step ? '#FD8D3C' :
+                                        '#FEB24C';
+        }
+    </script>
+</body>
+</html>
