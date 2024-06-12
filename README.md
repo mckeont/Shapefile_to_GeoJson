@@ -2,6 +2,7 @@
 Tool to submit and save a shapefile into a directory while converting to GeoJson. Desktop quick tool.
 
 PS C:\Users\ureka\documents\GIS_Project> .\env\Scripts\Activate.ps1
+
 (env) PS C:\Users\ureka\documents\GIS_Project> python app.py
  * Serving Flask app 'app'
  * Debug mode: on
